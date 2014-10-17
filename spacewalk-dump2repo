@@ -1,0 +1,94 @@
+#!/bin/bash
+#If you have any comments/suggestions, please contact me: e n e a s z () a o l . c o m
+
+DBuser=`awk '/db_user/{print $3}' /etc/rhn/rhn.conf` #Database user
+DBpass=`awk '/db_password/{print $3}' /etc/rhn/rhn.conf`
+DBname=`awk '/db_name/{print $3}' /etc/rhn/rhn.conf`
+location=/var/www/cobbler/localmirror # Path to where repository will be created
+satellite=/var/work/satellite/ #  RPM repository mount point
+minspace=20212632 # In blocks
+
+if [[ $USER != root ]]; then
+	echo -e "\e[32mYou need to run this script as root NOT as $USER\e[0m\n"
+	exit
+fi
+clear
+### Checking avaliable disk space
+available=`df -P $location| tail -1 | cut -d' ' -f 6`
+printf '\e[32mDestination: %-5s \e[0m\n' $location
+if [[ $minspace -gt $available ]]; then
+	echo -e "\e[1m\e[31m\e[5m*** Low  disk space, only  $available blocks available! ***\e[0m\n"
+fi
+
+### Gettling list of avaliable channerls from DB
+index=0
+echo "Following channels detected:"
+printf "%0.s_" {1..48}
+echo ""
+ for channel in `psql -q -t -h 127.0.0.1 -U $DBuser $DBname  -c "select label from rhnchannel order by id;"`
+	do
+	id=`psql -q -t -h 127.0.0.1 -U $DBuser $DBname  -c "select id from rhnchannel where label='$channel';"`
+	printf '\e[32m|id %-5s |\e[33m %-35s|\e[0m\n' $id $channel
+
+	if [ index = 0 ]; then
+		x="$id"
+		(( index++ ))
+	else
+		x="$id $x"
+	fi
+ done
+printf "%0.s-" {1..48}
+echo
+declare -a MYARRAY=($x);
+echo -e "\e[31mEnter id number:\e[0m"
+read selected
+if [ "x$selected" = "x" ]; then
+	echo -e "\e[31mNo selection made, exiting ...\e[0m"
+	exit
+else
+declare -a NEWARRAY=( ${MYARRAY[@]/${selected}/} )
+	if [[ ${#NEWARRAY[@]} -lt ${#MYARRAY[@]} ]]; then
+
+		start=`date +%s`
+
+### Fetching channel label to ensure destination folder for the repository exists
+		selected_channel=`psql -q -t -h 127.0.0.1 -U $DBuser $DBname  -c "select label from rhnchannel where id=$selected;"`
+		destination=`echo $selected_channel |awk -F'--' '{print $1}'`
+
+		if [ ! -d "$location/$destination-production_tmp" ];
+			then
+				echo "Creating $location/$destination-production_tmp"
+				mkdir -p $location/$destination-production_tmp
+			else
+				echo -e "\e[33mNuking $location/$destination-production_tmp\e[0m"
+				rm -rf $location/$destination-production_tmp && mkdir -p $location/$destination-production_tmp
+		fi
+
+
+### Using id for selected channel, creating a list of all packages in this channel
+		lista=`psql -t -q -h 127.0.0.1 -U $DBuser $DBname -c "select package_id from rhnchannelpackage where channel_id=$selected ORDER BY package_id;"`
+		count=0
+		for i in $lista
+			do
+       			path=`psql -t -q -h 127.0.0.1 -U $DBuser -d $DBname -c "select path from rhnpackage where  id=$i"`
+			path="${path#"${path%%[![:space:]]*}"}"
+			destination=`echo $selected_channel |awk -F'--' '{print $1}'`
+			cp $satellite/$path $location/$destination-production_tmp/
+#			count=$[$count +1]
+			(( count++ ))
+			echo -ne "\e[33mFound $count packages\e[0m"'\r'
+		done
+
+		echo -e "\e[33mFound $count packages\e[0m"
+		echo -e "\e[33mSigning all packages in $location/$destination-production_tmp/ \e[0m"
+		rpm --resign $location/$destination-production_tmp/*.rpm
+
+		echo -e "\e[33mCreating repository data\e[0m"
+		createrepo -v -s sha $location/$destination-production_tmp > /dev/null
+		rm -rf $location/$destination-production && mv $location/$destination-production_tmp $location/$destination-production
+		end=`date +%s`
+		echo -e "\e[33m$count packages in repository $destination-production were created in $((end-start)) seconds\e[0m"
+	else
+		echo -e "\e[33mOption you choosen does not exist! Exiting.\e[0m"
+	fi
+fi
