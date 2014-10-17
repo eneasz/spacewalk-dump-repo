@@ -74,7 +74,6 @@ declare -a NEWARRAY=( ${MYARRAY[@]/${selected}/} )
 			path="${path#"${path%%[![:space:]]*}"}"
 			destination=`echo $selected_channel |awk -F'--' '{print $1}'`
 			cp $satellite/$path $location/$destination-production_tmp/
-#			count=$[$count +1]
 			(( count++ ))
 			echo -ne "\e[33mFound $count packages\e[0m"'\r'
 		done
