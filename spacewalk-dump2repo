@@ -1,5 +1,5 @@
 #!/bin/bash
-#If you have any comments/suggestions, please contact me: e n e a s z () a o l . c o m
+#If you have any comments/suggestions, please contact me
 
 DBuser=`awk '/db_user/{print $3}' /etc/rhn/rhn.conf` #Database user
 DBpass=`awk '/db_password/{print $3}' /etc/rhn/rhn.conf`
